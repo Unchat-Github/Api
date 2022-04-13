@@ -1,5 +1,5 @@
-export interface Notification {
-  type: string;
-  value: string;
+export interface NotificationType {
+  type: 'invite' | 'friend';
   author: string;
+  value: string;
 }

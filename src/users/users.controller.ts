@@ -12,10 +12,13 @@ import { Request } from 'express';
 import { DbUser } from './interfaces/user.interface';
 import { UsersService } from './users.service';
 import { simpleflake } from 'simpleflakes';
+import { io } from 'socket.io-client';
 
 @Controller('users')
 export class UserController {
   constructor(private userService: UsersService) {}
+
+  private socket = io('http://localhost:5000/');
 
   generateSnowflake() {
     return simpleflake(Date.now(), 23 - 200, Date.UTC(2000, 1, 1)).toString();
@@ -117,17 +120,6 @@ export class UserController {
     }
   }
 
-  @Get(':id/notifications')
-  async getNotifications(@Param('id') id: string, @Req() req: Request) {
-    const { authorization } = req.headers;
-    if (!(await this.checkAuthToken(authorization)))
-      return { status: 401, message: 'Forbbiden' };
-
-    const user = await this.userService.get({ id });
-    if (!user) return { status: 404, message: 'User not found' };
-    if (user) return await this.userService.getNotifications(id);
-  }
-
   @Get(':id/channels')
   async getUserChannels(@Param('id') id: string, @Req() req: Request) {
     const { authorization } = req.headers;
@@ -140,6 +132,54 @@ export class UserController {
     if (user) {
       const data = await this.userService._getChannels(id);
       return data ? data : [];
+    }
+  }
+
+  @Get(':id/notifications')
+  async getUserNotifications(@Param('id') id: string, @Req() req: Request) {
+    const { authorization } = req.headers;
+    if (!(await this.checkAuthToken(authorization)))
+      return { status: 401, message: 'Forbbiden' };
+
+    const user = await this.userService.get({ id });
+    if (!user) return { status: 404, message: 'User not found' };
+
+    if (user) {
+      const data = await this.userService._getNotifications(user.id);
+      return data;
+    }
+  }
+
+  @Post(':id/notifications')
+  async createUserNotifications(@Param('id') id: string, @Req() req: Request) {
+    const { authorization } = req.headers;
+    if (!(await this.checkAuthToken(authorization)))
+      return { status: 401, message: 'Forbbiden' };
+
+    const user = await this.userService.get({ id });
+    if (!user) return { status: 404, message: 'User not found' };
+
+    if (user) {
+      if (!req.body.by || !req.body.type || !req.body.value)
+        return {
+          status: 400,
+          message: 'Bad body request',
+        };
+
+      await this.userService._createNotification(
+        id,
+        req.body.by,
+        req.body.type,
+        req.body.value,
+      );
+
+      this.socket.emit(`NOTIFICATION_CREATE`, {
+        by: req.body.by,
+        type: req.body.type,
+        value: await this.userService.get({ id: req.body.by }),
+      });
+
+      return { status: 200, message: 'OK' };
     }
   }
 

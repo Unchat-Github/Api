@@ -16,7 +16,7 @@ export class UsersService {
     @InjectModel('channels')
     private readonly channelModel: Model<ChannelDocument>,
     @InjectModel('notifications')
-    private readonly notificatioModel: Model<NotificationDocument>,
+    private readonly notifModel: Model<NotificationDocument>,
   ) {}
 
   async get(query: {
@@ -93,32 +93,112 @@ export class UsersService {
     return new_token;
   }
 
-  /**
-   * Notifications
-   */
-  async getNotifications(id: string) {
-    const data = await this.notificatioModel.aggregate([
-      {
-        $match: { author: id },
-      },
-      {
-        $project: { _id: 0, __v: 0 },
-      },
+  async _getNotifications(id: string) {
+    const [data] = await this.notifModel.aggregate([
+      { $match: { author: id } },
       {
         $lookup: {
           from: 'users',
           localField: 'notifications.author',
           foreignField: 'id',
-          as: 'notifications.author',
-          pipeline: [
-            {
-              $project: { _id: 0, email: 0, password: 0 },
-            },
-          ],
+          as: 'users',
+          pipeline: [{ $project: { _id: 0, __v: 0, password: 0, email: 0 } }],
         },
+      },
+      {
+        $project: {
+          notifications: {
+            $map: {
+              input: '$notifications',
+              as: 'c',
+              in: {
+                $mergeObjects: [
+                  '$$c',
+                  {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: '$users',
+                          cond: {
+                            $eq: ['$$c.notifications.author', '$$this._id'],
+                          },
+                        },
+                      },
+                      0,
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $set: {
+          notifications: {
+            $map: {
+              input: '$notifications',
+              as: 'n',
+              in: {
+                author: {
+                  avatar: '$$n.avatar',
+                  id: '$$n.id',
+                  createdAt: '$$n.createdAt',
+                  status: '$$n.status',
+                  username: '$$n.username',
+                },
+                type: '$$n.type',
+                value: '$$n.value',
+              },
+            },
+          },
+          author: id,
+        },
+      },
+      {
+        $project: { _id: 0 },
       },
     ]);
 
+    return data;
+  }
+
+  /**
+   * Notifications
+   */
+  async _createNotification(
+    id: string,
+    by: string,
+    type: 'invite' | 'friend',
+    value: string,
+  ) {
+    const user = await this.notifModel.findOne({ author: id });
+    let data: any;
+    if (!user) {
+      data = await this.notifModel.create({
+        author: id,
+        notifications: [
+          {
+            author: by,
+            type,
+            value,
+          },
+        ],
+      });
+    } else {
+      data = await this.notifModel.updateOne(
+        { author: id },
+        {
+          $push: {
+            notifications: {
+              author: by,
+              type,
+              value,
+            },
+          },
+        },
+      );
+    }
     return data;
   }
 }

@@ -5,8 +5,8 @@
 
 ## Unchat is a app where you can just chat with you friends.
 
-- This code is made using [NextJS](nextjs.org)
-- With [typescript](typescriptlang.com)
+- This code is made using [NestJS](https://nestjs.com)
+- With [typescript](https://typescriptlang.com)
 
 This thing is made by : [jadennns](https://jadennns.netlify.app/)
 
